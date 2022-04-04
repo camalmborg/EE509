@@ -297,7 +297,8 @@ Writing the combined model (below) involves little more than putting the code fo
 PoisRegPlusCalib = "
 model {
   ### TDR calibration curve
-  for(i in 1:2) { alpha[i] ~ dnorm(0,0.001)}   ## calibration priors
+  alpha[1] ~ dnorm(0,0.001)   ## calibration priors
+  alpha[2] ~ dlnorm(0,0.01)   ## calibration priors
   sigma ~ dgamma(0.1,0.1)
   for(i in 1:10){
     ESMc[i] <- alpha[1] + alpha[2]*TDRc[i]   ## expected soil moisture, calibration process model
@@ -328,8 +329,8 @@ While this model looks larger and more complicated that most we've looked at in 
 #11) Run final combined model
 
 #add calib data to data:
-data2<-list(TDR=TDR,TDRc=TDRc,y=y,n=n)
-inits<-list(alpha=c(caliblm$coefficients[1],caliblm$coefficients[2]),sigma=2)
+data2<-list(TDR=TDR,TDRc=TDRc,SMc=SMc,y=y,n=n)
+inits<-list(alpha=caliblm$coefficients,sigma=20)
 
 #fit the model:
 j.model<-jags.model(file=textConnection(PoisRegPlusCalib),
@@ -338,12 +339,15 @@ j.model<-jags.model(file=textConnection(PoisRegPlusCalib),
                   n.chains = 3)
 
 jags.out   <- coda.samples (model = j.model,
-                   variable.names = c("beta","alpha"),
-                   n.iter = 5000)
+                   variable.names = c("beta","alpha","sigma"),
+                   n.iter = 25000)
 
 ```
 ```{r}
 plot(jags.out)
+```
+```{r}
+out<-as.matrix(jags.out)
 ```
 
 
@@ -358,14 +362,16 @@ ypred <- matrix(NA,nrow=niter,ncol=npred)
 ycred <- matrix(NA,nrow=niter,ncol=npred)
 
 for(i in 1:niter){
-  Ey  <- exp(out[i,1] + out[i,2]*xpred) 
+  ESM <- out[i,1] + out[i,2]*xpred
+  SMc <- rnorm(npred,ESM,1/sqrt(out[i,5]))
+  Ey  <- exp(out[i,3] + out[i,4]*SMc)
   ycred[i,] <- Ey
   ypred[i,] <- rpois(npred,Ey)
 }
 ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
 pi <- apply(ypred,2,quantile,c(0.025,0.975))
 
-#plot(TDR,y,col="brown",pch=20)
+plot(TDR,y,col="brown",pch=20)
 lines(xpred,ci[2,],col=3,lwd=2)  ## median model
 lines(xpred,ci[1,],col=3,lty=2) ## model CI
 lines(xpred,ci[3,],col=3,lty=2)
@@ -373,7 +379,7 @@ lines(xpred,pi[1,],col=4,lty=2) ## model PI
 lines(xpred,pi[2,],col=4,lty=2)
 ```
 
-
+>EiV must greater uncertainty than error in Poisson
 
 13.	How does this fit compare to the previous Poisson regression of seedlings vs TDR in terms of the overall uncertainty in the model (width of credible and predictive intervals)?  In qualitative terms, to what degree does ignoring the uncertainty in the TDR/Soil Moisture relationship affect the uncertainty in our parameter estimates and our confidence in our model?
 
