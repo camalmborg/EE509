@@ -203,6 +203,11 @@ data.c<-data
 samp<-sample(1:length(TDR),1)
 dsamp<-data$TDR[samp] ##save value of TDR sample!
 data.c$TDR<-replace(data.c$TDR,samp,NA)
+
+#add values for min and max of TDR for missing data model:
+data.c$samp<-samp
+data.c$min<-min(TDR)
+data.c$max<-max(TDR)
 ```
 
 
@@ -212,7 +217,9 @@ data.c$TDR<-replace(data.c$TDR,samp,NA)
 #the model:
 pois_reg_missing <- "
 model {
-  beta ~ dmnorm(b0,Vb)     ## multivariate Normal prior on regression params
+  ## priors:
+  beta ~ dmnorm(b0,Vb)
+  TDR[samp] ~ dunif(min,max)
 
   for(i in 1:n){
       log(mu[i]) <- beta[1]+beta[2]*TDR[i] ## process model
@@ -221,29 +228,35 @@ model {
 }
 "
 
-## Make data object:
-data <- list(TDR = TDR, y = y, n = length(y))
-
-## Specify priors:
-data$b0 <- as.vector(c(0,0))      ## regression b means
-data$Vb <- solve(diag(20000,2))   ## regression b precisions
-
 ## JAGS model:
-j.model   <- jags.model (file = textConnection(pois_regression),
-                             data = data,
-                             n.chains = 3)
+j.model<-jags.model(file=textConnection(pois_reg_missing),
+                  data = data.c,
+                  n.chains = 3)
 
 jags.out   <- coda.samples (model = j.model,
-                            variable.names = c("beta"),
-                                n.iter = 20000)
+                   variable.names = c("beta",(paste0("TDR[",as.character(samp),"]"))),
+                      n.iter = 20000)
+
+burnin = 5000
+jags.burn <- window(jags.out,start=burnin) 
+plot(jags.burn)
 
 ```
-
 
 * Re-run the model using this data, but this time add the TDR value you removed to the variables that you track (e.g. TDR[12]) so that we can view the posterior distribution.
 
 ### Lab Report Task 3: 
-10.  Report the posterior distributions of the missing TDR data.  How does this compare to the prior your specified and to the true value? 
+10.  Report the posterior distributions of the missing TDR data.  How does this compare to the prior you specified and to the true value? 
+
+```{r}
+#True TDR value:
+TDR[samp]
+
+#estimated TDR value:
+summ<-summary(jags.burn)
+summ$statistics[1,1]
+```
+> My estimated TDR value was close but not exactly the true TDR value. I am not surprised that there is a difference between the two values since I used an uninformed, uniformly distributed prior that included all values between the minimum and maximum TDR values in the data. Based on the density plot provided, it looks like there is a longer tail on the left side, indicating that the true value does fall within the range over which the missing value ultimately converged. Overall, the model is sufficiently able to estimate a TDR value that is plausible given the other X's and Y values in the model.
 
 ### Poisson Regression with Errors in Variables
 
@@ -305,12 +318,63 @@ model {
 
 
 While this model looks larger and more complicated that most we've looked at in JAGS, it really just consists of a number of simple parts we've seen before.  The first part is the fitting of the calibration curve.  The second part involves using the calibration curve to estimate soil moisture and then fitting the Poisson regression of seedling density vs soil moisture.  Unlike the conventional approach of performing each step sequentially, this approach propagates the error in each step into the final model.
-	Reminder: you may want to specify initial conditions on the model parameters.  It is perfectly valid to use the previous estimates (e.g. Task 1) for the initial conditions.  For example, if I wanted to initialize alpha to all 0's and sigma to 5 I would specify list(alpha=c(0,0),sigma(5))
+  Reminder: you may want to specify initial conditions on the model parameters.  It is perfectly valid to use the previous estimates (e.g. Task 1) for the initial conditions.  For example, if I wanted to initialize alpha to all 0's and sigma to 5 I would specify list(alpha=c(0,0),sigma(5))
  
 ### Lab Report Task 4: 
 
 11. Fit the final combined calibration/Poisson regression model and provide a summary table and posterior density plots for the model parameters.  Also report the burn in and the effective MCMC sample size.
+
+```{r}
+#11) Run final combined model
+
+#add calib data to data:
+data2<-list(TDR=TDR,TDRc=TDRc,y=y,n=n)
+inits<-list(alpha=c(caliblm$coefficients[1],caliblm$coefficients[2]),sigma=2)
+
+#fit the model:
+j.model<-jags.model(file=textConnection(PoisRegPlusCalib),
+                  data = data2,
+                  inits=inits,
+                  n.chains = 3)
+
+jags.out   <- coda.samples (model = j.model,
+                   variable.names = c("beta","alpha"),
+                   n.iter = 5000)
+
+```
+```{r}
+plot(jags.out)
+```
+
+
 12. Plot the model credible interval and predictive interval.  Extra Credit: Include the scatterplot of the data on the plot, using the posterior CIs for all the latent _SM_ variables as the x.
+
+```{r}
+#12) Plot model confidence intervals
+niter <- 10000
+xpred <- seq(0,max(TDR),length=30)
+npred <- length(xpred)
+ypred <- matrix(NA,nrow=niter,ncol=npred)
+ycred <- matrix(NA,nrow=niter,ncol=npred)
+
+for(i in 1:niter){
+  Ey  <- exp(out[i,1] + out[i,2]*xpred) 
+  ycred[i,] <- Ey
+  ypred[i,] <- rpois(npred,Ey)
+}
+ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
+pi <- apply(ypred,2,quantile,c(0.025,0.975))
+
+#plot(TDR,y,col="brown",pch=20)
+lines(xpred,ci[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci[1,],col=3,lty=2) ## model CI
+lines(xpred,ci[3,],col=3,lty=2)
+lines(xpred,pi[1,],col=4,lty=2) ## model PI
+lines(xpred,pi[2,],col=4,lty=2)
+```
+
+
+
 13.	How does this fit compare to the previous Poisson regression of seedlings vs TDR in terms of the overall uncertainty in the model (width of credible and predictive intervals)?  In qualitative terms, to what degree does ignoring the uncertainty in the TDR/Soil Moisture relationship affect the uncertainty in our parameter estimates and our confidence in our model?
 
 
