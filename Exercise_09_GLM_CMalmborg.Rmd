@@ -339,15 +339,42 @@ j.model<-jags.model(file=textConnection(PoisRegPlusCalib),
                   n.chains = 3)
 
 jags.out   <- coda.samples (model = j.model,
-                   variable.names = c("beta","alpha","sigma"),
-                   n.iter = 25000)
+                   variable.names = c("beta","alpha","sigma","SM"),
+                   n.iter = 50000)
 
+#burn in:
+burnin = 10000
+jags.burn<-window(jags.out,burnin)
+
+#separate jags object output:
+codaSplit <- function(jags.burn,pattern){
+  out = list()
+  mfit = as.matrix(jags.burn,chains=TRUE)
+  pat.cols = grep(pattern,colnames(mfit),fixed=TRUE)
+  chain.col = which(colnames(mfit)=="CHAIN")
+  out[[1]] = mat2mcmc.list(mfit[,c(chain.col,pat.cols)])
+  out[[2]]   = mat2mcmc.list(mfit[,-pat.cols])
+  return(out)
+}
+
+mat2mcmc.list <- function(w) {
+  temp <- list()
+  chain.col <- which(colnames(w) == "CHAIN")
+  for (i in unique(w[, "CHAIN"])) {
+    temp[[i]] <- coda:::as.mcmc(w[w[, "CHAIN"] == i, -chain.col])
+  }
+  return(as.mcmc.list(temp))
+}
+
+outSM <- codaSplit(jags.burn,"SM")
 ```
 ```{r}
-plot(jags.out)
-```
-```{r}
-out<-as.matrix(jags.out)
+#plotted and did burn in first:
+#plot(jags.out)
+#gelman.plot(jags.out)
+
+out <- as.matrix(outSM[[2]])
+out.SM <- as.matrix(outSM[[1]])
 ```
 
 
@@ -371,7 +398,16 @@ for(i in 1:niter){
 ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
 pi <- apply(ypred,2,quantile,c(0.025,0.975))
 
-plot(TDR,y,col="brown",pch=20)
+#SM confidence intervals:
+ycredSM <- matrix(NA, nrow=niter, ncol=npred)
+for (i in 1:niter){
+  EySM <- exp(out[i,3] + out[i,4]*out.SM)
+  ycredSM <- EySM
+}
+ciSM <- apply(ycredSM,2,quantile,c(0.5))
+
+plot(TDR,y,col="brown",pch=16)
+plot(ciSM,y,col="red")
 lines(xpred,ci[2,],col=3,lwd=2)  ## median model
 lines(xpred,ci[1,],col=3,lty=2) ## model CI
 lines(xpred,ci[3,],col=3,lty=2)
