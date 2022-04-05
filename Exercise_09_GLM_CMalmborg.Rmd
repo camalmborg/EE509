@@ -256,7 +256,7 @@ TDR[samp]
 summ<-summary(jags.burn)
 summ$statistics[1,1]
 ```
-> My estimated TDR value was close but not exactly the true TDR value. I am not surprised that there is a difference between the two values since I used an uninformed, uniformly distributed prior that included all values between the minimum and maximum TDR values in the data. Based on the density plot provided, it looks like there is a longer tail on the left side, indicating that the true value does fall within the range over which the missing value ultimately converged. Overall, the model is sufficiently able to estimate a TDR value that is plausible given the other X's and Y values in the model.
+> My estimated TDR value was close to, but not the true TDR value. I am not surprised that there is a difference between the two values since I used an uninformed, uniformly distributed prior that included all values between the minimum and maximum TDR values in the data. Based on the density plot provided, it looks like there is a longer tail on the left side, indicating that the true value does fall within the range over which the missing value ultimately converged. Overall, the model is sufficiently able to estimate a TDR value that is plausible given the other X's and Y values in the model.
 
 ### Poisson Regression with Errors in Variables
 
@@ -369,6 +369,10 @@ mat2mcmc.list <- function(w) {
 outSM <- codaSplit(jags.burn,"SM")
 ```
 ```{r}
+summary(outSM[[2]])
+```
+
+```{r}
 #plotted and did burn in first:
 #plot(jags.out)
 #gelman.plot(jags.out)
@@ -398,25 +402,20 @@ for(i in 1:niter){
 ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
 pi <- apply(ypred,2,quantile,c(0.025,0.975))
 
-#SM confidence intervals:
-ycredSM <- matrix(NA, nrow=niter, ncol=npred)
-for (i in 1:niter){
-  EySM <- exp(out[i,3] + out[i,4]*out.SM)
-  ycredSM <- EySM
-}
-ciSM <- apply(ycredSM,2,quantile,c(0.5))
+#SM confidence interaval:
+SM.ci <- apply(out.SM,2,quantile,c(0.025,0.5,0.975))
 
-plot(TDR,y,col="brown",pch=16)
-plot(ciSM,y,col="red")
+plot(TDR,y,col="deepskyblue",pch=8,cex=0.5,
+     xlab="x",ylab="seedling count")
+points(SM.ci[2,],y,col="navy",pch=20)
+points(SM.ci[1,],y,col="navy",pch=1, cex=0.5)
+points(SM.ci[3,],y,col="navy",pch=1, cex=0.5)
 lines(xpred,ci[2,],col=3,lwd=2)  ## median model
 lines(xpred,ci[1,],col=3,lty=2) ## model CI
 lines(xpred,ci[3,],col=3,lty=2)
 lines(xpred,pi[1,],col=4,lty=2) ## model PI
 lines(xpred,pi[2,],col=4,lty=2)
 ```
-
->EiV must greater uncertainty than error in Poisson
-
 13.	How does this fit compare to the previous Poisson regression of seedlings vs TDR in terms of the overall uncertainty in the model (width of credible and predictive intervals)?  In qualitative terms, to what degree does ignoring the uncertainty in the TDR/Soil Moisture relationship affect the uncertainty in our parameter estimates and our confidence in our model?
 
-
+> The Errors in Variables (combined) model has confidence intervals that are much wider than the previous model, suggesting that there is more overall uncertainty around predictions when we account for the uncertainty in TDR/soil moisture relationship. When we plot the SM curve we can see that it has a different shape than the best fit line that is based on the seedling count vs TDR data, particularly as soil moisture increases. In the model summary, we can see that the beta slope parameter is higher than the previously predicted models. The CI's around the SM curve show that the higher soil moisture is, the less confident we are about the soil moisture/seedling count relationship.   
