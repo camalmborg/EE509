@@ -74,7 +74,7 @@ plot(dat$time,dat$density,col=alpha(cols,0.25),
 out<-as.matrix(jags.out)
 
 #calculate CI's and PI's
-niter <- 10000
+niter <- nrow(out)
 xpred <- seq(min(dat$time),max(dat$time),length=30)
 npred <- length(xpred)
 ypred <- matrix(NA,nrow=niter,ncol=npred)
@@ -110,9 +110,9 @@ Note that the version above is formatted slightly differently from the version c
 ```{r}
 head(dat)
 ```
-The variable `time` used in the code above is a vector of indices (length = nrow(dat)) matching a specific row of data to a specific `alpha.t`. Therefore, when building the `data` list that you pass into `jags.model` you'll want to add `time` and have that vector contain values in the range from 1 to 10 instead of 1995-2004. When working with long data, the easiest way to do this is to convert a column to a factor, then from a factor to an integrer
+The variable `time` used in the code above is a vector of indices (length = nrow(dat)) matching a specific row of data to a specific `alpha.t`. Therefore, when building the `data` list that you pass into `jags.model` you'll want to add `time` and have that vector contain values in the range from 1 to 10 instead of 1995-2004. When working with long data, the easiest way to do this is to convert a column to a factor, then from a factor to an integer
 ```{r}
-as.integer(as.factor(dat$time))
+time<-as.integer(as.factor(dat$time))
 ```
 
 2. Update the data model to reference `Ex[t]` instead of `mu`
@@ -123,6 +123,38 @@ alpha.t[t] ~ dnorm(0,tau.t)		## random year effect
 ```
 
 4. Add a prior on `tau.t`, the year-to-year variability
+
+```{r}
+mosquito_bite<-"model{
+  ## Priors:
+  mu ~ dnorm(0,0.001) 
+  ##sigma ~ dgamma(0.001,0.001)
+  
+  for (t in 1:nt){
+    alpha.t[t] ~ dnorm(0,tau.t)
+  }
+  tau.t ~ dgamma(0.001,0.001)
+  
+  ##Process model:
+  for (d in 1:nd){
+      Ex[d] <- mu + alpha.t[time[d]]
+  }
+}
+"
+
+#data for model:
+data <- list(x=dat$density, nd=length(dat$density),
+             time=time, nt=length(time))
+
+j.model   <- jags.model (file = textConnection(mosquito_bite),
+                             data = data,
+                             n.chains = 3)
+
+jags.out <- coda.samples(model = j.model,
+                         variable.names = c("mu","alpha.t"),
+                         n.iter = 10000)
+```
+
 
 ### Lab Report Task 2
 
