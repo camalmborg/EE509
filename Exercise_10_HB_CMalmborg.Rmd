@@ -34,7 +34,7 @@ mosquito_bite<-"model{
   mu ~ dnorm(0,0.001) 
   sigma ~ dgamma(0.001,0.001)
   
-  ##Process model:
+  ##Data model:
   for (d in 1:nd){
     x[d] ~ dnorm(mu, sigma)
   }
@@ -128,7 +128,7 @@ alpha.t[t] ~ dnorm(0,tau.t)		## random year effect
 mosquito_bite<-"model{
   ## Priors:
   mu ~ dnorm(0,0.001) 
-  ##sigma ~ dgamma(0.001,0.001)
+  sigma ~ dgamma(0.001,0.001)
   
   for (t in 1:nt){
     alpha.t[t] ~ dnorm(0,tau.t)
@@ -137,22 +137,27 @@ mosquito_bite<-"model{
   
   ##Process model:
   for (d in 1:nd){
-      Ex[d] <- mu + alpha.t[time[d]]
+    Ex[d] <- mu + alpha.t[time[d]]
+    ##Data model:
+    x[d] ~ dnorm(Ex[d], sigma)
   }
 }
 "
 
 #data for model:
-data <- list(x=dat$density, nd=length(dat$density),
-             time=time, nt=length(time))
+data <- list(x=dat$density, time=time, nt=length(unique(dat$time)),
+             nd=length(dat$density))
 
 j.model   <- jags.model (file = textConnection(mosquito_bite),
                              data = data,
                              n.chains = 3)
 
 jags.out <- coda.samples(model = j.model,
-                         variable.names = c("mu","alpha.t"),
+                         variable.names = c("mu","sigma", "alpha.t", "tau.t"),
                          n.iter = 10000)
+```
+```{r}
+#plot(jags.out)
 ```
 
 
@@ -168,7 +173,71 @@ summary(jags.out[,sel.a])
 alpha <- jags.mat[,sel.a]
 apply(alpha,2,mean)
 ```
+
+```{r}
+#make jags output matrix:
+jags.mat <- as.matrix(jags.out)
+sel.a <- grep("alpha",colnames(jags.mat))
+sel.mu <- grep("mu",colnames(jags.mat))
+sel.sig <- grep("sigma",colnames(jags.mat))
+sel.t <- grep("tau",colnames(jags.mat))
+alpha <- jags.mat[,sel.a]
+tau <- jags.mat[,sel.t]
+a.means<-apply(alpha,2,mean)
+mu <- jags.mat[,sel.mu]
+sig <- jags.mat[,sel.sig]
+out <- as.matrix(cbind(mu,sig))
+
+#calculate CI's and PI's
+niter <- nrow(out)
+nt <- data$nt
+xpred <- seq(min(dat$time),max(dat$time),length=10)
+npred <- length(xpred)
+Ex <- matrix(NA,nrow=niter,ncol=npred)
+ypred <- matrix(NA,nrow=niter,ncol=npred)
+ycred <- matrix(NA,nrow=niter,ncol=npred)
+
+for(t in 1:nt){
+  for(i in 1:niter){
+    Ey <- out[i,1] + alpha[i,t]
+    Ex[i,t] <- as.numeric(Ey)
+    ycred[i,] <- Ex[i,]
+    ypred[i,t] <- rnorm(1,Ex[i,t],1/sqrt(out[i,2]))
+  }
+}
+
+ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
+pi <- apply(ypred,2,quantile,c(0.025,0.975))
+
+cols<-as.integer(as.factor(dat$rep))
+plot(dat$time,dat$density,col=alpha(cols,0.25),
+     pch=16, xlab="Year", ylab="Mosquito Density",
+     ylim=c(6,9))
+
+lines(xpred,ci[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci[1,],col=3,lty=2) ## model CI
+lines(xpred,ci[3,],col=3,lty=2)
+lines(xpred,pi[1,],col=4,lty=2) ## model PI
+lines(xpred,pi[2,],col=4,lty=2)
+
+```
+
+
 5.	Based on the posterior mean estimates from this model, approximately what percentage of the variance in the mosquito densities is explained by the year effects? Which parameters (and from which models) do you need to look at to assess this?
+
+```{r}
+summ<-summary(jags.out)
+summ
+
+sigglywiggly<-1/sqrt(summ$statistics["sigma",1])
+tautau<-1/sqrt(summ$statistics["tau.t",1])
+totalerror<-sum(sigglywiggly,tautau)
+
+paste0("Sigma residual error:",as.character(sigglywiggly))
+paste0("Er")
+
+```
+
 
 6. Extra Credit: Repeat the Task 2 analysis adding a random effect on `rep`
 
