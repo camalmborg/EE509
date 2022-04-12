@@ -44,11 +44,11 @@ mosquito_bite<-"model{
 #data for model:
 data <- list(x=dat$density, nd=length(dat$density))
 
-j.model   <- jags.model (file = textConnection(mosquito_bite),
+j.model1 <- jags.model (file = textConnection(mosquito_bite),
                              data = data,
                              n.chains = 3)
 
-jags.out <- coda.samples(model = j.model,
+jags.out <- coda.samples(model = j.model1,
                          variable.names = c("mu","sigma"),
                          n.iter = 10000)
 
@@ -57,6 +57,8 @@ jags.out <- coda.samples(model = j.model,
 plot(jags.out)
 
 summary(jags.out)
+#save for final table:
+summ1<-summary(jags.out)
 ```
 
 
@@ -75,7 +77,7 @@ out<-as.matrix(jags.out)
 
 #calculate CI's and PI's
 niter <- nrow(out)
-xpred <- seq(min(dat$time),max(dat$time),length=30)
+xpred <- seq(min(dat$time),max(dat$time),length=10)
 npred <- length(xpred)
 ypred <- matrix(NA,nrow=niter,ncol=npred)
 ycred <- matrix(NA,nrow=niter,ncol=npred)
@@ -148,11 +150,11 @@ mosquito_bite<-"model{
 data <- list(x=dat$density, time=time, nt=length(unique(dat$time)),
              nd=length(dat$density))
 
-j.model   <- jags.model (file = textConnection(mosquito_bite),
+j.model2 <- jags.model (file = textConnection(mosquito_bite),
                              data = data,
                              n.chains = 3)
 
-jags.out <- coda.samples(model = j.model,
+jags.out2 <- coda.samples(model = j.model2,
                          variable.names = c("mu","sigma", "alpha.t", "tau.t"),
                          n.iter = 10000)
 ```
@@ -176,7 +178,7 @@ apply(alpha,2,mean)
 
 ```{r}
 #make jags output matrix:
-jags.mat <- as.matrix(jags.out)
+jags.mat <- as.matrix(jags.out2)
 sel.a <- grep("alpha",colnames(jags.mat))
 sel.mu <- grep("mu",colnames(jags.mat))
 sel.sig <- grep("sigma",colnames(jags.mat))
@@ -226,18 +228,19 @@ lines(xpred,pi[2,],col=4,lty=2)
 5.	Based on the posterior mean estimates from this model, approximately what percentage of the variance in the mosquito densities is explained by the year effects? Which parameters (and from which models) do you need to look at to assess this?
 
 ```{r}
-summ<-summary(jags.out)
-summ
+summ2<-summary(jags.out2)
+summ2
 
-sigglywiggly<-1/sqrt(summ$statistics["sigma",1])
-tautau<-1/sqrt(summ$statistics["tau.t",1])
-totalerror<-sum(sigglywiggly,tautau)
+sigglywiggly<-round(1/sqrt(summ2$statistics["sigma",1]),3)
+tautau<-round(1/sqrt(summ2$statistics["tau.t",1]),3)
+totalerror<-round(sum(sigglywiggly,tautau),3)
 
 paste0("Sigma residual error:",as.character(sigglywiggly))
-paste0("Er")
+paste0("Tau year effect error:",as.character(tautau))
+paste0("Total error:",as.character(totalerror))
 
 ```
-
+> According to our estimates of tau.t and sigma, about half of the overall model uncertainty is related to year-to-year variability between mosqito population denisty measurements. To do this we look at tau.t and sigma values in the model. The sigma value represents the residual error associated with the process separate from the effect of year.
 
 6. Extra Credit: Repeat the Task 2 analysis adding a random effect on `rep`
 
@@ -248,8 +251,142 @@ You are discussing your research with a colleague and mention that your random e
 ### Lab Report Task 3:
 
 6.  As an exploratory analysis of this hypothesis, plot the posterior mean of your random year effect (alpha.t) versus each of the three met variables.  Turn in figures and note which variable(s) are worth exploring further.
+
+```{r}
+met<-read.csv("data/met.csv")
+#subset for years of mosquito data:
+years<-unique(dat$time)
+mety<-met[met$year<=max(years),]
+
+alpha.t<-as.numeric(a.means)
+
+plot(mety$precip,alpha.t,main="Precipitation vs Alpha",
+     xlab="Precipitation (mm/yr)",ylab="Alpha values",
+     pch=16,col="royalblue1")
+
+plot(mety$MAT,alpha.t,main="Mean Annual Temperature vs Alpha",
+     xlab="Mean Annual Temperature (C)",ylab="Alpha values",
+     pch=16,col="violetred")
+
+plot(mety$RH,alpha.t,main="Relative Humidity vs Alpha",
+     xlab="Relative Humidity (%)",ylab="Alpha values",
+     pch=16,col="slateblue1")
+
+```
+
+> Based on these plots, it is likely that precipitation is a worthwhile variable to investigate, since it appears to be correlated with the yearly alpha values.
+
 7.	Convert the random effects model to a mixed effects model by converting the mean, mu, to a linear model, `beta0 + beta1*y[i]` where y is the meteorological covariate you want to include, while keeping the random year effect.
+
 8.	Fit your mixed effects model and plot the model CI and PI vs the data
+
+```{r}
+mosquito_bite<-"model{
+  ## Priors:
+  beta0 ~ dnorm(0,0.001) 
+  beta1 ~ dnorm(0,0.001)
+  sigma ~ dgamma(0.001,0.001)
+  
+  for (t in 1:nt){
+    mu[t] <- beta0 + beta1*y[t]
+    alpha.t[t] ~ dnorm(0,tau.t)
+  }
+  tau.t ~ dgamma(0.001,0.001)
+  
+  ##Process model:
+  for (d in 1:nd){
+    Ex[d] <- mu[time[d]] + alpha.t[time[d]]
+    ##Data model:
+    x[d] ~ dnorm(Ex[d], sigma)
+  }
+}
+"
+
+#data for model:
+data <- list(x=dat$density, time=time, nt=length(unique(dat$time)),
+             nd=length(dat$density), y=mety$precip)
+
+j.model3 <- jags.model (file = textConnection(mosquito_bite),
+                             data = data,
+                             n.chains = 3)
+
+jags.out3 <- coda.samples(model = j.model3,
+                         variable.names = c("mu", "sigma", "alpha.t", "tau.t",
+                                            "beta0", "beta1"),
+                         n.iter = 10000)
+```
+```{r}
+out<-as.matrix(jags.out3)
+summ3<-summary(jags.out3)
+#separate out info for CI's, PI's:
+#make jags output matrix:
+jags.mat <- as.matrix(jags.out3)
+sel.a <- grep("alpha",colnames(jags.mat))
+sel.mu <- grep("mu",colnames(jags.mat))
+sel.sig <- grep("sigma",colnames(jags.mat))
+sel.t <- grep("tau",colnames(jags.mat))
+alpha <- jags.mat[,sel.a]
+tau <- jags.mat[,sel.t]
+a.means<-apply(alpha,2,mean)
+mu <- jags.mat[,sel.mu]
+sig <- jags.mat[,sel.sig]
+
+#calculate CI's and PI's
+niter <- nrow(out)
+nt <- data$nt
+xpred <- seq(min(dat$time),max(dat$time),length=10)
+npred <- length(xpred)
+Ex <- matrix(NA,nrow=niter,ncol=npred)
+ypred <- matrix(NA,nrow=niter,ncol=npred)
+ycred <- matrix(NA,nrow=niter,ncol=npred)
+
+for(t in 1:nt){
+  for(i in 1:niter){
+    Ey <- mu[i,t] + alpha[i,t]
+    Ex[i,t] <- as.numeric(Ey)
+    ycred[i,] <- Ex[i,]
+    ypred[i,t] <- rnorm(1,Ex[i,t],1/sqrt(sig[i]))
+  }
+}
+
+ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
+pi <- apply(ypred,2,quantile,c(0.025,0.975))
+
+cols<-as.integer(as.factor(dat$rep))
+plot(dat$time,dat$density,col=alpha(cols,0.25),
+     pch=16, xlab="Year", ylab="Mosquito Density",
+     ylim=c(6,9))
+
+lines(xpred,ci[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci[1,],col=3,lty=2) ## model CI
+lines(xpred,ci[3,],col=3,lty=2)
+lines(xpred,pi[1,],col=4,lty=2) ## model PI
+lines(xpred,pi[2,],col=4,lty=2)
+```
+
+
 9.	Create a summary table that provides the posterior parameter means and CI for all 3 models and their DIC scores.
+
+```{r}
+DIC1<-dic.samples(j.model1,n.iter = 5000)
+DIC2<-dic.samples(j.model2,n.iter = 5000)
+DIC3<-dic.samples(j.model3,n.iter = 5000)
+```
+```{r}
+modelcompare<-data.frame(matrix(ncol = 3, nrow = 1))
+modelcompare[1,]<-c(sum(DIC1$deviance,DIC1$penalty),
+                    sum(DIC2$deviance,DIC2$penalty),
+                    sum(DIC3$deviance,DIC3$penalty))
+
+#rownames(modelcompare)<-c("DIC","Sigma")
+colnames(modelcompare)<-c("Model 1 DIC", "Model 2 DIC","Model 3 DIC")
+ 
+print(modelcompare)
+
+print(summ1)
+print(summ2)
+print(summ3)
+```
+
 10.	Extra Credit: Use the best fitting model to predict the next 5 years (2005-2009) of mosquito abundance including an uncertainty estimate (predictive interval). Turn in a graph of your prediction. Hint: the easiest way to make predictions is to create new rows in your data object that has covariates but NA's for the y's.
 
