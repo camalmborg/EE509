@@ -1,6 +1,6 @@
 ---
 title: 'Exercise 11: State Space'
-author: "GE 509"
+author: "Charlotte Malmborg"
 output: html_document
 ---
  
@@ -113,10 +113,10 @@ j.model <- jags.model (file = textConnection(mooses),
                              n.chains = 3)
 
 jags.out <- coda.samples(model = j.model,
-                         variable.names = c("sigma","r","tau","x",
-                                            "y[18]","y[19]",
-                                            "y[20]","y[21]",
-                                            "y[44]"),
+                         variable.names = c("sigma","r","tau",
+                                            "mu","y[18]",
+                                            "y[19]","y[20]",
+                                            "y[21]","y[44]"),
                          n.iter = 12000)
 ```
 ```{r}
@@ -127,12 +127,105 @@ jags.out <- coda.samples(model = j.model,
 burnin=2000
 jags.burn <-window(jags.out,start=burnin)
 #plot(jags.burn)
+
+out<-as.matrix(jags.burn)
 ```
 
 
 
 Also include the following plots:
 a) Plots of the time series data on both the LOG and LINEAR scales that include the model mean and credible intervals. Note: the linear scale plots are just a transform of the outputs from the log-scale model, NOT a different model. Also remember that because of Jensen's inequality you shouldn't transform the summary statistics, but you CAN transform the MCMC samples themselves
+
+```{r}
+#plot linear scale:
+plot(dat$year,dat$density, ylim=c(-1,325),
+     xlab="Year",ylab="Moose Population Density",
+     col='brown',pch=20)
+
+jags.mat <- as.matrix(jags.burn)
+sel.r <- grep("r",colnames(jags.mat))
+sel.mu <- grep("mu",colnames(jags.mat))
+sel.sig <- grep("sigma",colnames(jags.mat))
+sel.t <- grep("tau",colnames(jags.mat))
+sel.y <-grep("y",colnames(jags.mat))
+outs <- jags.mat[,c(sel.r,sel.sig,sel.t)]
+mu <- jags.mat[,sel.mu]
+ys <- jags.mat[,sel.y]
+
+#calculate CI's and PI's
+niter <- nrow(out)
+nt <- length(dat$year)
+xpred <- seq(min(dat$year),max(dat$year),length=length(dat$year))
+npred <- length(xpred)
+Ex <- matrix(NA,nrow=niter,ncol=npred)
+ypred <- matrix(NA,nrow=niter,ncol=npred)
+ycred <- matrix(NA,nrow=niter,ncol=npred)
+
+for(t in 1:nt){
+  for(i in 1:niter){
+    Ey <- mu[i,t] + outs[i,1]
+    Ex[i,t] <- as.numeric(Ey)
+    ycred[i,] <- Ex[i,]
+    ypred[i,t]<-rnorm(1,Ex[i,t],1/sqrt(outs[i,2]))
+  }
+}
+
+ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
+pi <- apply(ypred,2,quantile,c(0.025,0.975))
+
+lines(xpred,ci[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci[1,],col=3,lty=2) ## model CI
+lines(xpred,ci[3,],col=3,lty=2)
+lines(xpred,pi[1,],col=4,lty=2) ## model PI
+lines(xpred,pi[2,],col=4,lty=2)
+```
+
+```{r}
+#plot log scale:
+lout=exp(as.matrix(jags.burn))
+
+plot(dat$year,dat$density, ylim=c(-1,325),
+     xlab="Year",ylab="Moose Population Density",
+     col='grey48',pch=20)
+
+jags.mat <- lout
+sel.r <- grep("r",colnames(jags.mat))
+sel.mu <- grep("mu",colnames(jags.mat))
+sel.sig <- grep("sigma",colnames(jags.mat))
+sel.t <- grep("tau",colnames(jags.mat))
+sel.y <-grep("y",colnames(jags.mat))
+louts <- jags.mat[,c(sel.r,sel.sig,sel.t)]
+lmu <- jags.mat[,sel.mu]
+lys <- jags.mat[,sel.y]
+
+#calculate CI's and PI's
+niter <- nrow(lout)
+nt <- length(dat$year)
+xpred <- seq(min(dat$year),max(dat$year),length=length(dat$year))
+npred <- length(xpred)
+Ex <- matrix(NA,nrow=niter,ncol=npred)
+ypred <- matrix(NA,nrow=niter,ncol=npred)
+ycred <- matrix(NA,nrow=niter,ncol=npred)
+
+for(t in 1:nt){
+  for(i in 1:niter){
+    Ey <- exp(lmu[i,t] + louts[i,1])
+    Ex[i,t] <- as.numeric(Ey)
+    ycred[i,] <- Ex[i,]
+    ypred[i,t]<-rlnorm(1,Ex[i,t],1/sqrt(louts[i,2]))
+  }
+}
+
+ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
+pi <- apply(ypred,2,quantile,c(0.025,0.975))
+
+lines(xpred,ci[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci[1,],col=3,lty=2) ## model CI
+lines(xpred,ci[3,],col=3,lty=2)
+lines(xpred,pi[1,],col=4,lty=2) ## model PI
+lines(xpred,pi[2,],col=4,lty=2)
+
+```
 
 
 b) Density plots for the predicted values for the missing data. Note: make sure to track these variables as part of your coda.samples variable list.
@@ -147,4 +240,4 @@ Hint: when implementing the Ricker model, don't forget that N and X are on diffe
 
 5.	What can you infer about the relative importance of autogenic vs exogenous factors in regulating this population?
 
-6.	**Extra Credit**: An alternative to fitting this model as a time-series would have been to fit the data to the analytical solution for the model (e.g. for the exponential growth model, this would have been $N[1]*exp[r*t]$  ), which would have ignored the process varibility.  To approximate the difference in the resulting prediction, generate a time-series plot for the best fitting model (Exponential or Ricker) that contains: (1) the posterior model from your Bayesian fit (mean and CI on X), (2) the CI from the process model using the posterior parameter distributions (r, K, N[1]) but ignoring process error, (3) the observed data.  Comment on the difference between these lines, and between the lines and the data.
+6.	**Extra Credit**: An alternative to fitting this model as a time-series would have been to fit the data to the analytical solution for the model (e.g. for the exponential growth model, this would have been $N[1]*exp[r*t]$  ), which would have ignored the process variability.  To approximate the difference in the resulting prediction, generate a time-series plot for the best fitting model (Exponential or Ricker) that contains: (1) the posterior model from your Bayesian fit (mean and CI on X), (2) the CI from the process model using the posterior parameter distributions (r, K, N[1]) but ignoring process error, (3) the observed data.  Comment on the difference between these lines, and between the lines and the data.
