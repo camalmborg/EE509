@@ -82,8 +82,8 @@ dat<-read.table("data/alcesdata.txt", header=T)
 mooses<-"model{
   ## Priors:
   r ~ dnorm(r0,vr)
-  #k ~ dlnorm(k0,vk)
-  mu[1] ~ dnorm(mu0,vm) 
+  ##k ~ dlnorm(k0,vk)
+  x[1] ~ dnorm(mu0,vm) 
   sigma ~ dgamma(s1,s2)
   tau ~ dgamma(t1,t2)
   
@@ -101,7 +101,7 @@ mooses<-"model{
 "
 
 #data for model:
-data <- list(x=dat$density, N=length(dat$year),
+data <- list(y=log(dat$density), N=length(dat$year),
              s1=0.001,s2=0.001,
              t1=100, t2=0.001,
              r0=1, vr=0.001,
@@ -113,18 +113,17 @@ j.model <- jags.model (file = textConnection(mooses),
                              n.chains = 3)
 
 jags.out <- coda.samples(model = j.model,
-                         variable.names = c("sigma","r","tau",
-                                            "mu","y[18]",
-                                            "y[19]","y[20]",
+                         variable.names = c("sigma","r","tau","x",
+                                            "y[18]","y[19]","y[20]",
                                             "y[21]","y[44]"),
-                         n.iter = 12000)
+                         n.iter = 50000)
 ```
 ```{r}
-# plot(jags.out)
+#plot(jags.out)
 # effectiveSize(jags.out)
-# gelman.plot(jags.out)
+#gelman.plot(jags.out)
 
-burnin=2000
+burnin=5000
 jags.burn <-window(jags.out,start=burnin)
 #plot(jags.burn)
 
@@ -137,102 +136,51 @@ Also include the following plots:
 a) Plots of the time series data on both the LOG and LINEAR scales that include the model mean and credible intervals. Note: the linear scale plots are just a transform of the outputs from the log-scale model, NOT a different model. Also remember that because of Jensen's inequality you shouldn't transform the summary statistics, but you CAN transform the MCMC samples themselves
 
 ```{r}
-#plot linear scale:
-plot(dat$year,dat$density, ylim=c(-1,325),
-     xlab="Year",ylab="Moose Population Density",
-     col='brown',pch=20)
-
-jags.mat <- as.matrix(jags.burn)
-sel.r <- grep("r",colnames(jags.mat))
-sel.mu <- grep("mu",colnames(jags.mat))
-sel.sig <- grep("sigma",colnames(jags.mat))
-sel.t <- grep("tau",colnames(jags.mat))
-sel.y <-grep("y",colnames(jags.mat))
-outs <- jags.mat[,c(sel.r,sel.sig,sel.t)]
-mu <- jags.mat[,sel.mu]
-ys <- jags.mat[,sel.y]
-
-#calculate CI's and PI's
-niter <- nrow(out)
-nt <- length(dat$year)
-xpred <- seq(min(dat$year),max(dat$year),length=length(dat$year))
-npred <- length(xpred)
-Ex <- matrix(NA,nrow=niter,ncol=npred)
-ypred <- matrix(NA,nrow=niter,ncol=npred)
-ycred <- matrix(NA,nrow=niter,ncol=npred)
-
-for(t in 1:nt){
-  for(i in 1:niter){
-    Ey <- mu[i,t] + outs[i,1]
-    Ex[i,t] <- as.numeric(Ey)
-    ycred[i,] <- Ex[i,]
-    ypred[i,t]<-rnorm(1,Ex[i,t],1/sqrt(outs[i,2]))
-  }
-}
-
-ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
-pi <- apply(ypred,2,quantile,c(0.025,0.975))
-
-lines(xpred,ci[2,],col=3,lwd=2)  ## median model
-lines(xpred,ci[1,],col=3,lty=2) ## model CI
-lines(xpred,ci[3,],col=3,lty=2)
-lines(xpred,pi[1,],col=4,lty=2) ## model PI
-lines(xpred,pi[2,],col=4,lty=2)
-```
-
-```{r}
 #plot log scale:
-lout=exp(as.matrix(jags.burn))
+Xs = out[,grep("x",colnames(out))]
 
-plot(dat$year,dat$density, ylim=c(-1,325),
+plot(dat$year,log(dat$density),
      xlab="Year",ylab="Moose Population Density",
-     col='grey48',pch=20)
+     col='brown',pch=20, main="Log Scale Plot",
+     ylim=c(0,6))
 
-jags.mat <- lout
-sel.r <- grep("r",colnames(jags.mat))
-sel.mu <- grep("mu",colnames(jags.mat))
-sel.sig <- grep("sigma",colnames(jags.mat))
-sel.t <- grep("tau",colnames(jags.mat))
-sel.y <-grep("y",colnames(jags.mat))
-louts <- jags.mat[,c(sel.r,sel.sig,sel.t)]
-lmu <- jags.mat[,sel.mu]
-lys <- jags.mat[,sel.y]
+ci <- apply(Xs,2,quantile,c(0.025,0.5,0.975))
+#pi <- apply(ypred,2,quantile,c(0.025,0.975))
 
-#calculate CI's and PI's
-niter <- nrow(lout)
-nt <- length(dat$year)
-xpred <- seq(min(dat$year),max(dat$year),length=length(dat$year))
-npred <- length(xpred)
-Ex <- matrix(NA,nrow=niter,ncol=npred)
-ypred <- matrix(NA,nrow=niter,ncol=npred)
-ycred <- matrix(NA,nrow=niter,ncol=npred)
+lines(dat$year,ci[2,],col=3,lwd=2)  ## median model
+lines(dat$year,ci[1,],col=3,lty=2) ## model CI
+lines(dat$year,ci[3,],col=3,lty=2)
 
-for(t in 1:nt){
-  for(i in 1:niter){
-    Ey <- exp(lmu[i,t] + louts[i,1])
-    Ex[i,t] <- as.numeric(Ey)
-    ycred[i,] <- Ex[i,]
-    ypred[i,t]<-rlnorm(1,Ex[i,t],1/sqrt(louts[i,2]))
-  }
-}
 
-ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
-pi <- apply(ypred,2,quantile,c(0.025,0.975))
+#plot linear scale:
+plot(dat$year,dat$density,
+     xlab="Year",ylab="Moose Population Density",
+     col='brown',pch=20, main="Linear Scale Plot",
+     ylim=c(-1,400))
 
-lines(xpred,ci[2,],col=3,lwd=2)  ## median model
-lines(xpred,ci[1,],col=3,lty=2) ## model CI
-lines(xpred,ci[3,],col=3,lty=2)
-lines(xpred,pi[1,],col=4,lty=2) ## model PI
-lines(xpred,pi[2,],col=4,lty=2)
+ci <- apply(exp(Xs),2,quantile,c(0.025,0.5,0.975))
+
+lines(dat$year,ci[2,],col=3,lwd=2)  ## median model
+lines(dat$year,ci[1,],col=3,lty=2) ## model CI
+lines(dat$year,ci[3,],col=3,lty=2)
 
 ```
+
 
 
 b) Density plots for the predicted values for the missing data. Note: make sure to track these variables as part of your coda.samples variable list.
 c) Density plots of the intrinsic growth rate, the observation error variance, and the process model error variance
 
+```{r}
+#use func density() instead of hist for all y's you need
+
+```
+
+
 2.	Modify the exponential growth process model in the JAGS code to instead be the Ricker growth model.  Rerun including your JAGS code and the same figures as in part 1 plus plots for both the prior and posterior density on the carrying capacity.
 Hint: when implementing the Ricker model, don't forget that N and X are on different scales.
+
+
 
 3.	Construct a summary table that includes the parameters in both models, their 95% CI, and model selection scores (your choice between DIC, WAIC, or predictive loss).
 
