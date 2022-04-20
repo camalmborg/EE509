@@ -120,7 +120,7 @@ jags.out <- coda.samples(model = j.model,
 ```
 ```{r}
 #plot(jags.out)
-# effectiveSize(jags.out)
+#effectiveSize(jags.out)
 #gelman.plot(jags.out)
 
 burnin=5000
@@ -128,8 +128,8 @@ jags.burn <-window(jags.out,start=burnin)
 #plot(jags.burn)
 
 out<-as.matrix(jags.burn)
+summ1<-summary(jags.burn)
 ```
-
 
 
 Also include the following plots:
@@ -145,7 +145,6 @@ plot(dat$year,log(dat$density),
      ylim=c(0,6))
 
 ci <- apply(Xs,2,quantile,c(0.025,0.5,0.975))
-#pi <- apply(ypred,2,quantile,c(0.025,0.975))
 
 lines(dat$year,ci[2,],col=3,lwd=2)  ## median model
 lines(dat$year,ci[1,],col=3,lty=2) ## model CI
@@ -203,12 +202,187 @@ for (i in 1:ncol(outpar)){
 2.	Modify the exponential growth process model in the JAGS code to instead be the Ricker growth model.  Rerun including your JAGS code and the same figures as in part 1 plus plots for both the prior and posterior density on the carrying capacity.
 Hint: when implementing the Ricker model, don't forget that N and X are on different scales.
 
+```{r}
+#Ricker model:
+meeses<-"model{
+  ## Priors:
+  r ~ dnorm(r0,vr)
+  k ~ dlnorm(k0,vk)
+  x[1] ~ dnorm(mu0,vm) 
+  sigma ~ dgamma(s1,s2)
+  tau ~ dgamma(t1,t2)
+  
+  ##Data model:
+  for (t in 1:N){
+    y[t] ~ dnorm(x[t], tau)
+  }
+  
+  ## Process model for exponential growth
+  for(t in 2:N) {
+    mu[t] <- x[t-1] + r*(1-exp(x[t-1])/k)
+    x[t] ~ dnorm(mu[t],sigma)
+  }
+}
+"
+
+#data for model:
+data <- list(y=log(dat$density), N=length(dat$year),
+             s1=0.001,s2=0.001,
+             t1=0.001, t2=0.001,
+             r0=1, vr=0.001,
+             k0=log(300), vk=0.001,
+             mu0=100, vm=0.001)
+
+inits <- list(k=300,r=0.1,sigma=13,tau=300,x=colMeans(Xs))
+
+j.model.2 <- jags.model (file = textConnection(meeses),
+                             data = data,
+                             inits = inits,
+                             n.chains = 3)
+
+jags.out.2 <- coda.samples(model = j.model.2,
+                         variable.names = c("sigma","r","tau","k","x",
+                                            "y[18]","y[19]","y[20]",
+                                            "y[21]","y[44]"),
+                         n.iter = 100000)
+```
+```{r}
+# plot(jags.out.2)
+# effectiveSize(jags.out.2)
+# gelman.plot(jags.out.2)
+
+burnin=15000
+jags.burn.2 <-window(jags.out.2,start=burnin)
+#plot(jags.burn.2)
+
+out.2<-as.matrix(jags.burn.2)
+summ2<-summary(jags.out.2)
+```
+
+```{r}
+#plot log scale:
+Xs.2 = out[,grep("x",colnames(out.2))]
+
+plot(dat$year,log(dat$density),
+     xlab="Year",ylab="Moose Population Density",
+     col='brown',pch=20, main="Log Scale Plot",
+     ylim=c(0,6))
+
+ci.2 <- apply(Xs.2,2,quantile,c(0.025,0.5,0.975))
+
+lines(dat$year,ci.2[2,],col=3,lwd=2)  ## median model
+lines(dat$year,ci.2[1,],col=3,lty=2) ## model CI
+lines(dat$year,ci.2[3,],col=3,lty=2)
+
+
+#plot linear scale:
+plot(dat$year,dat$density,
+     xlab="Year",ylab="Moose Population Density",
+     col='brown',pch=20, main="Linear Scale Plot",
+     ylim=c(-1,400))
+
+ci.2 <- apply(exp(Xs.2),2,quantile,c(0.025,0.5,0.975))
+
+lines(dat$year,ci.2[2,],col=3,lwd=2)  ## median model
+lines(dat$year,ci.2[1,],col=3,lty=2) ## model CI
+lines(dat$year,ci.2[3,],col=3,lty=2)
+```
+
+```{r}
+#DENSITY PLOTS OF Y
+
+#use func density() instead of hist for all y's you need
+Ys.2<-out.2[,grep("y",colnames(out.2))]
+
+ds<-list()
+for (i in 1:ncol(Ys.2)){
+  ds[[i]]<-density(Ys.2[,i])
+  plot(ds[[i]], main=as.character(colnames(Ys.2)[i]))
+}
+
+```
+
+```{r}
+#PARAMETER DENISTY PLOTS
+
+outpar.2<-cbind(r=out.2[,grep("r",colnames(out.2))],
+                #k=out.2[,grep("k",colnames(out.2))],
+                sigma=out.2[,grep("sigma",colnames(out.2))],
+                tau=out.2[,grep("tau",colnames(out.2))])
+
+ds<-list()
+for (i in 1:ncol(outpar.2)){
+  ds[[i]]<-density(outpar.2[,i])
+  plot(ds[[i]], main=as.character(colnames(outpar.2)[i]))
+}
+
+kseq=1:1000
+plot(kseq,dlnorm(kseq,data$k0,1/sqrt(data$vk)), main="k densities", type="l")
+lines(density(out.2[,grep("k",colnames(out.2))]),col="red")
+```
 
 
 3.	Construct a summary table that includes the parameters in both models, their 95% CI, and model selection scores (your choice between DIC, WAIC, or predictive loss).
 
+```{r}
+#do the DICs:
+DIC.grow<-dic.samples(j.model, n.iter=10000)
+DIC.rick<-dic.samples(j.model.2, n.iter=10000)
+
+modelcompare<-data.frame(matrix(ncol = 2, nrow = 1))
+modelcompare[1,]<-c(sum(DIC.grow$deviance,DIC.grow$penalty),
+                    sum(DIC.rick$deviance,DIC.rick$penalty))
+
+#rownames(modelcompare)<-c("DIC","Sigma")
+colnames(modelcompare)<-c("Growth Model DIC", "Ricker Model DIC")
+ 
+print(modelcompare)
+```
+
+```{r}
+#GROW MODEL:
+#print(summ1)
+grow<-as.matrix(summ1$statistics)
+gq<-as.matrix(summ1$quantiles)
+
+#RICKER MODEL:
+#print(summ2)
+rick<-as.matrix(summ2$statistics)
+rq<-as.matrix(summ2$quantiles)
+
+k<-as.matrix(cbind(NA,rick["k","Mean"]))
+rs<-as.matrix(cbind(grow["r","Mean"],rick["r","Mean"]))
+sigmas<-as.matrix(cbind(grow["sigma","Mean"],rick["sigma","Mean"]))
+taus<-as.matrix(cbind(grow["tau","Mean"],rick["sigma","Mean"]))
+# y<-as.matrix(cbind(grow[grep("y",rownames(grow)),"Mean"],
+#          rick[grep("y",rownames(rick)),"Mean"]))
+
+kq<-as.matrix(cbind(NA,rq["k","97.5%"]))
+rsq<-as.matrix(cbind(gq["r","97.5%"],rq["r","97.5%"]))
+sigmasq<-as.matrix(cbind(gq["sigma","97.5%"],rq["sigma","97.5%"]))
+tausq<-as.matrix(cbind(gq["tau","97.5%"],rq["sigma","97.5%"]))
+# yq<-as.matrix(cbind(gq[grep("y",rownames(gq)),"97.5%"],
+#           rq[grep("y",rownames(rq)),"97.5%"]))
+
+paramsum<-rbind(k,kq,
+                rs,rsq,
+                sigmas,sigmasq,
+                taus,tausq)
+rownames(paramsum)<-c("K","K 95% CI","R","R 95% CI",
+                    "Sigma"," Sigma 95% CI",
+                    "Tau","Tau 95% CI")
+colnames(paramsum)<-c("Grow","Ricker")
+
+library(knitr)
+kable(paramsum, caption="Summary Table")
+
+```
+
+
 4.	Briefly give an interpretation of your results.  Be sure to comment on which model is a better fit, what you can interpret about the importance of density dependence in regulating this population, and whether the population is at its carrying capacity.  
 
+
 5.	What can you infer about the relative importance of autogenic vs exogenous factors in regulating this population?
+
 
 6.	**Extra Credit**: An alternative to fitting this model as a time-series would have been to fit the data to the analytical solution for the model (e.g. for the exponential growth model, this would have been $N[1]*exp[r*t]$  ), which would have ignored the process variability.  To approximate the difference in the resulting prediction, generate a time-series plot for the best fitting model (Exponential or Ricker) that contains: (1) the posterior model from your Bayesian fit (mean and CI on X), (2) the CI from the process model using the posterior parameter distributions (r, K, N[1]) but ignoring process error, (3) the observed data.  Comment on the difference between these lines, and between the lines and the data.
