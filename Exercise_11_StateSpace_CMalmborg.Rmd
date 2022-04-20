@@ -103,7 +103,7 @@ mooses<-"model{
 #data for model:
 data <- list(y=log(dat$density), N=length(dat$year),
              s1=0.001,s2=0.001,
-             t1=100, t2=0.001,
+             t1=0.001, t2=0.001,
              r0=1, vr=0.001,
 #             k0=300, vk=0.001,
              mu0=100, vm=0.001)
@@ -172,7 +172,30 @@ b) Density plots for the predicted values for the missing data. Note: make sure 
 c) Density plots of the intrinsic growth rate, the observation error variance, and the process model error variance
 
 ```{r}
+#DENSITY PLOTS OF Y
+
 #use func density() instead of hist for all y's you need
+Ys<-out[,grep("y",colnames(out))]
+
+ds<-list()
+for (i in 1:ncol(Ys)){
+  ds[[i]]<-density(Ys[,i])
+  plot(ds[[i]], main=as.character(colnames(Ys)[i]))
+}
+```
+
+```{r}
+#PARAMETER DENISTY PLOTS
+
+outpar<-cbind(r=out[,grep("r",colnames(out))],
+              sigma=out[,grep("sigma",colnames(out))],
+              tau=out[,grep("tau",colnames(out))])
+
+ds<-list()
+for (i in 1:ncol(outpar)){
+  ds[[i]]<-density(outpar[,i])
+  plot(ds[[i]], main=as.character(colnames(outpar)[i]))
+}
 
 ```
 
